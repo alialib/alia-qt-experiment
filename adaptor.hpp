@@ -1,7 +1,7 @@
 #ifndef QT_ADAPTOR_HPP
 #define QT_ADAPTOR_HPP
 
-#include "alia.hpp"
+#include <alia.hpp>
 
 struct qt_traversal;
 

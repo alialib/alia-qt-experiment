@@ -1,8 +1,7 @@
 #include <QApplication>
 #include <QWidget>
 
-#define ALIA_IMPLEMENTATION
-#include "alia.hpp"
+#include <alia.hpp>
 
 #include "adaptor.hpp"
 
@@ -28,6 +27,7 @@ do_sandbox_ui(qt_context ctx)
     }
     ALIA_END
 
+    do_button(ctx, value("Reset"), x <<= "Hello!");
     do_button(ctx, x, actions::toggle(state));
     do_button(ctx, value("Toggle!"), actions::toggle(state));
 }

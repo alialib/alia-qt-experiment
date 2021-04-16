@@ -301,12 +301,20 @@ do_text_control(qt_context ctx, duplex<string> text)
             [&](auto text) {
                 // Prevent update cycles.
                 if (widget.object->toPlainText().toUtf8().constData() != text)
+                {
+                    widget.object->blockSignals(true);
                     widget.object->setText(text.c_str());
+                    widget.object->blockSignals(false);
+                }
             },
             [&]() {
                 // Prevent update cycles.
                 if (widget.object->toPlainText().toUtf8().constData() != "")
+                {
+                    widget.object->blockSignals(true);
                     widget.object->setText("");
+                    widget.object->blockSignals(true);
+                }
             });
     });
 
