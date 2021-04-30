@@ -54,8 +54,6 @@ do_label(qt_context ctx, readable<string> text)
     });
 }
 
-#if 0
-
 struct click_event : targeted_event
 {
 };
@@ -65,20 +63,8 @@ struct qt_button
     QPushButton* object = nullptr;
     captured_id text_id;
     component_identity identity;
-
-
-    void
-    update(alia::system* system, QWidget* parent, QLayout* layout)
-    {
-        assert(object);
-        if (object->parent() != parent)
-        {
-            object->setParent(parent);
-            if (parent->isVisible())
-                object->show();
-        }
-        layout->addWidget(object);
-    }
+    alia::tree_node<layout_object> tree_node;
+    widget_layout_node layout_node;
 
     ~qt_button()
     {
@@ -101,6 +87,8 @@ do_button(qt_context ctx, readable<string> text, action<> on_click)
         {
             auto& traversal = get<qt_traversal_tag>(ctx);
             button.object = new QPushButton;
+            button.layout_node.initialize(button.object);
+            button.tree_node.object.node = &button.layout_node;
             QObject::connect(
                 button.object,
                 &QPushButton::clicked,
@@ -113,7 +101,7 @@ do_button(qt_context ctx, readable<string> text, action<> on_click)
                 });
         }
 
-        add_layout_node(ctx, &button);
+        refresh_tree_node(get<qt_traversal_tag>(ctx), button.tree_node);
 
         refresh_signal_view(
             button.text_id,
@@ -136,24 +124,13 @@ struct value_update_event : targeted_event
     string value;
 };
 
-struct qt_text_control : qt_layout_node
+struct qt_text_control
 {
     QTextEdit* object = nullptr;
     captured_id text_id;
     component_identity identity;
-
-    void
-    update(alia::system* system, QWidget* parent, QLayout* layout)
-    {
-        assert(object);
-        if (object->parent() != parent)
-        {
-            object->setParent(parent);
-            if (parent->isVisible())
-                object->show();
-        }
-        layout->addWidget(object);
-    }
+    alia::tree_node<layout_object> tree_node;
+    widget_layout_node layout_node;
 
     ~qt_text_control()
     {
@@ -176,6 +153,8 @@ do_text_control(qt_context ctx, duplex<string> text)
         {
             auto& traversal = get<qt_traversal_tag>(ctx);
             widget.object = new QTextEdit;
+            widget.layout_node.initialize(widget.object);
+            widget.tree_node.object.node = &widget.layout_node;
             QObject::connect(
                 widget.object,
                 &QTextEdit::textChanged,
@@ -190,7 +169,7 @@ do_text_control(qt_context ctx, duplex<string> text)
                 });
         }
 
-        add_layout_node(ctx, &widget);
+        refresh_tree_node(get<qt_traversal_tag>(ctx), widget.tree_node);
 
         refresh_signal_view(
             widget.text_id,
@@ -210,7 +189,7 @@ do_text_control(qt_context ctx, duplex<string> text)
                 {
                     widget.object->blockSignals(true);
                     widget.object->setText("");
-                    widget.object->blockSignals(true);
+                    widget.object->blockSignals(false);
                 }
             });
     });
@@ -220,8 +199,6 @@ do_text_control(qt_context ctx, duplex<string> text)
             write_signal(text, e.value);
         });
 }
-
-#endif
 
 struct qt_column
 {
@@ -248,7 +225,8 @@ scoped_column::begin(qt_context ctx)
 {
     qt_column* column;
     get_cached_data(ctx, &column);
-    tree_scoping_.begin(get<qt_traversal_tag>(ctx), column->tree_node);
+    if (is_refresh_event(ctx))
+        tree_scoping_.begin(get<qt_traversal_tag>(ctx), column->tree_node);
 }
 void
 scoped_column::end()

@@ -29,22 +29,22 @@ do_sandbox_ui(qt_context ctx)
             "passages, and more recently with desktop publishing software "
             "like Aldus PageMaker including versions of Lorem Ipsum.</p>"));
 
-    // auto x = get_state(ctx, empty<std::string>());
-    // do_text_control(ctx, x);
-    // do_text_control(ctx, x);
+    auto x = get_state(ctx, empty<std::string>());
+    do_text_control(ctx, x);
+    do_text_control(ctx, x);
 
-    // do_label(ctx, x);
+    do_label(ctx, x);
 
-    // auto state = get_state(ctx, true);
-    // ALIA_IF(state)
-    // {
-    //     do_label(ctx, value("Secret message!"));
-    // }
-    // ALIA_END
+    auto state = get_state(ctx, true);
+    ALIA_IF(state)
+    {
+        do_label(ctx, value("Secret message!"));
+    }
+    ALIA_END
 
-    // do_button(ctx, value("Reset"), x <<= "abacadaba!");
-    // do_button(ctx, x, actions::toggle(state));
-    // do_button(ctx, value("Toggle!"), actions::toggle(state));
+    do_button(ctx, value("Reset"), x <<= "abacadaba!");
+    do_button(ctx, x, actions::toggle(state));
+    do_button(ctx, value("Toggle!"), actions::toggle(state));
 }
 
 alia::system the_system;
