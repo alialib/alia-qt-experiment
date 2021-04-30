@@ -3,6 +3,7 @@
 #include <QLabel>
 #include <QLayout>
 #include <QPushButton>
+#include <QSettings>
 #include <QTextEdit>
 #include <QWidget>
 
@@ -12,121 +13,12 @@ using namespace alia;
 
 using std::string;
 
-struct qt_layout_container;
-
-struct qt_layout_node : noncopyable
-{
-    virtual void
-    update(alia::system* system, QWidget* parent, QLayout* layout)
-        = 0;
-
-    qt_layout_node* next;
-    qt_layout_container* parent;
-};
-
-struct qt_layout_container : qt_layout_node
-{
-    qt_layout_node* children;
-
-    virtual void
-    record_change();
-
-    qt_layout_container* parent;
-
-    bool dirty;
-};
-
-struct qt_traversal
-{
-    QWidget* active_parent = nullptr;
-    qt_layout_container* active_container = nullptr;
-    // a pointer to the pointer that should store the next item that's added
-    qt_layout_node** next_ptr = nullptr;
-};
-
-void
-record_layout_change(qt_traversal& traversal)
-{
-    if (traversal.active_container)
-        traversal.active_container->record_change();
-}
-
-void
-set_next_node(qt_traversal& traversal, qt_layout_node* node)
-{
-    if (*traversal.next_ptr != node)
-    {
-        record_layout_change(traversal);
-        *traversal.next_ptr = node;
-    }
-}
-
-void
-add_layout_node(dataless_qt_context ctx, qt_layout_node* node)
-{
-    qt_traversal& traversal = get<qt_traversal_tag>(ctx);
-    set_next_node(traversal, node);
-    traversal.next_ptr = &node->next;
-}
-
-void
-record_container_change(qt_layout_container* container)
-{
-    while (container && !container->dirty)
-    {
-        container->dirty = true;
-        container = container->parent;
-    }
-}
-
-void
-qt_layout_container::record_change()
-{
-    record_container_change(this);
-}
-
-void
-scoped_layout_container::begin(qt_context ctx, qt_layout_container* container)
-{
-    refresh_handler(ctx, [&](auto ctx) {
-        traversal_ = &get<qt_traversal_tag>(ctx);
-        qt_traversal& traversal = *traversal_;
-
-        set_next_node(traversal, container);
-        container->parent = traversal.active_container;
-
-        traversal.next_ptr = &container->children;
-        traversal.active_container = container;
-    });
-}
-void
-scoped_layout_container::end()
-{
-    if (traversal_)
-    {
-        set_next_node(*traversal_, nullptr);
-
-        qt_layout_container* container = traversal_->active_container;
-        traversal_->next_ptr = &container->next;
-        traversal_->active_container = container->parent;
-
-        traversal_ = nullptr;
-    }
-}
-
-struct qt_label : qt_layout_node
+struct qt_label
 {
     QLabel* object = nullptr;
     captured_id text_id;
-
-    void
-    update(alia::system* system, QWidget* parent, QLayout* layout)
-    {
-        assert(object);
-        if (object->parent() != parent)
-            object->setParent(parent);
-        layout->addWidget(object);
-    }
+    alia::tree_node<layout_object> tree_node;
+    widget_layout_node layout_node;
 
     ~qt_label()
     {
@@ -146,13 +38,13 @@ do_label(qt_context ctx, readable<string> text)
         if (!label.object)
         {
             auto& traversal = get<qt_traversal_tag>(ctx);
-            auto* parent = traversal.active_parent;
-            label.object = new QLabel(parent);
-            if (parent->isVisible())
-                label.object->show();
+            label.object = new QLabel;
+            label.object->setWordWrap(true);
+            label.layout_node.initialize(label.object);
+            label.tree_node.object.node = &label.layout_node;
         }
 
-        add_layout_node(ctx, &label);
+        refresh_tree_node(get<qt_traversal_tag>(ctx), label.tree_node);
 
         refresh_signal_view(
             label.text_id,
@@ -162,22 +54,29 @@ do_label(qt_context ctx, readable<string> text)
     });
 }
 
+#if 0
+
 struct click_event : targeted_event
 {
 };
 
-struct qt_button : qt_layout_node
+struct qt_button
 {
     QPushButton* object = nullptr;
     captured_id text_id;
     component_identity identity;
+
 
     void
     update(alia::system* system, QWidget* parent, QLayout* layout)
     {
         assert(object);
         if (object->parent() != parent)
+        {
             object->setParent(parent);
+            if (parent->isVisible())
+                object->show();
+        }
         layout->addWidget(object);
     }
 
@@ -201,10 +100,7 @@ do_button(qt_context ctx, readable<string> text, action<> on_click)
         if (!button.object)
         {
             auto& traversal = get<qt_traversal_tag>(ctx);
-            auto* parent = traversal.active_parent;
-            button.object = new QPushButton(parent);
-            if (parent->isVisible())
-                button.object->show();
+            button.object = new QPushButton;
             QObject::connect(
                 button.object,
                 &QPushButton::clicked,
@@ -251,7 +147,11 @@ struct qt_text_control : qt_layout_node
     {
         assert(object);
         if (object->parent() != parent)
+        {
             object->setParent(parent);
+            if (parent->isVisible())
+                object->show();
+        }
         layout->addWidget(object);
     }
 
@@ -275,10 +175,7 @@ do_text_control(qt_context ctx, duplex<string> text)
         if (!widget.object)
         {
             auto& traversal = get<qt_traversal_tag>(ctx);
-            auto* parent = traversal.active_parent;
-            widget.object = new QTextEdit(parent);
-            if (parent->isVisible())
-                widget.object->show();
+            widget.object = new QTextEdit;
             QObject::connect(
                 widget.object,
                 &QTextEdit::textChanged,
@@ -324,66 +221,52 @@ do_text_control(qt_context ctx, duplex<string> text)
         });
 }
 
-struct qt_column : qt_layout_container
+#endif
+
+struct qt_column
 {
-    QVBoxLayout* object = nullptr;
+    QVBoxLayout* qt_object = nullptr;
+    alia::tree_node<layout_object> tree_node;
+    box_layout tree_object;
 
-    void
-    update(alia::system* system, QWidget* parent, QLayout* layout)
+    qt_column()
     {
-        if (!object)
-            object = new QVBoxLayout(parent);
-
-        layout->addItem(object);
-
-        if (this->dirty)
-        {
-            while (object->takeAt(0))
-                ;
-            for (auto* node = children; node; node = node->next)
-                node->update(system, parent, object);
-            this->dirty = false;
-        }
+        qt_object = new QVBoxLayout;
+        tree_object.initialize(qt_object);
+        tree_node.object.node = &tree_object;
     }
 
     ~qt_column()
     {
-        if (object)
-            object->deleteLater();
+        if (qt_object)
+            qt_object->deleteLater();
     }
 };
 
 void
-column_layout::begin(qt_context ctx)
+scoped_column::begin(qt_context ctx)
 {
     qt_column* column;
     get_cached_data(ctx, &column);
-    slc_.begin(ctx, column);
+    tree_scoping_.begin(get<qt_traversal_tag>(ctx), column->tree_node);
 }
 void
-column_layout::end()
+scoped_column::end()
 {
-    slc_.end();
+    tree_scoping_.end();
 }
 
 void
 qt_system::operator()(alia::context vanilla_ctx)
 {
-    qt_traversal traversal;
+    tree_traversal<layout_object> traversal;
     qt_context ctx = extend_context<qt_traversal_tag>(vanilla_ctx, traversal);
 
-    refresh_handler(ctx, [&](auto ctx) {
-        traversal.next_ptr = &this->root;
-        traversal.active_parent = this->window;
-    });
+    scoped_tree_root<layout_object> scoped_root;
+    if (is_refresh_event(ctx))
+        scoped_root.begin(traversal, this->tree_root);
 
     this->controller(ctx);
-
-    refresh_handler(ctx, [&](auto ctx) {
-        while (this->layout->takeAt(0))
-            ;
-        this->root->update(this->system, this->window, this->layout);
-    });
 }
 
 void
@@ -394,11 +277,27 @@ initialize(
 {
     // Initialize the Qt system.
     qt_system.system = &alia_system;
-    qt_system.root = 0;
-    qt_system.window = new QWidget;
+    MainWindow* window = new MainWindow;
+    window->readSettings();
+    qt_system.window = window;
+
+    // {
+    //     QSettings settings("alia", "Qt");
+    //     qt_system.window->restoreGeometry(
+    //         settings.value("geometry").toByteArray());
+    // }
+    // QObject::connect(qt_system.window, &QWidget::resizeEvent, [&qt_system] {
+    //     QSettings settings("alia", "Qt");
+    //     settings.setValue("geometry", qt_system.window->saveGeometry());
+    // });
+
+    window->setProperty("bgType", "toplevel");
+
     qt_system.layout = new QVBoxLayout(qt_system.window);
     qt_system.window->setLayout(qt_system.layout);
     qt_system.controller = std::move(controller);
+    qt_system.layout_root.initialize(qt_system.layout);
+    qt_system.tree_root.object.node = &qt_system.layout_root;
 
     // Hook up the Qt system to the alia system.
     initialize_system(alia_system, std::ref(qt_system));
@@ -412,3 +311,5 @@ qt_system::~qt_system()
     window->deleteLater();
     layout->deleteLater();
 }
+
+#include "moc_adaptor.cpp"

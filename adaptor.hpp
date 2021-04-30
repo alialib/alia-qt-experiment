@@ -3,9 +3,12 @@
 
 #include <alia.hpp>
 
-struct qt_traversal;
+#include <QSettings>
+#include <QWidget>
 
-ALIA_DEFINE_TAGGED_TYPE(qt_traversal_tag, qt_traversal&)
+#include "layout.hpp"
+
+ALIA_DEFINE_TAGGED_TYPE(qt_traversal_tag, alia::tree_traversal<layout_object>&)
 
 typedef alia::extend_context_type_t<alia::context, qt_traversal_tag>
     qt_context;
@@ -23,53 +26,39 @@ void
 do_button(
     qt_context ctx, alia::readable<std::string> text, alia::action<> on_click);
 
-struct qt_layout_container;
+struct layout_container;
 
-struct scoped_layout_container : alia::noncopyable
+struct scoped_column
 {
-    scoped_layout_container()
+    scoped_column()
     {
     }
-    scoped_layout_container(qt_context ctx, qt_layout_container* container)
-    {
-        begin(ctx, container);
-    }
-    ~scoped_layout_container()
-    {
-        end();
-    }
-    void
-    begin(qt_context ctx, qt_layout_container* container);
-    void
-    end();
-
- private:
-    qt_traversal* traversal_ = nullptr;
-};
-
-struct column_layout : alia::noncopyable
-{
-    column_layout()
-    {
-    }
-    column_layout(qt_context ctx)
+    scoped_column(qt_context ctx)
     {
         begin(ctx);
     }
-    ~column_layout()
+    ~scoped_column()
     {
         end();
     }
+
     void
     begin(qt_context ctx);
+
     void
     end();
 
  private:
-    scoped_layout_container slc_;
+    alia::scoped_tree_node<layout_object> tree_scoping_;
 };
 
-struct qt_layout_node;
+template<class Content>
+void
+column(qt_context ctx, Content&& content)
+{
+    scoped_column scoped(ctx);
+    std::forward<Content>(content)();
+}
 
 class QWidget;
 class QVBoxLayout;
@@ -80,13 +69,14 @@ struct qt_system
 
     std::function<void(qt_context)> controller;
 
-    // the root of the application's UI tree
-    qt_layout_node* root = nullptr;
-
     // the top-level window and layout for the UI - The entire application's UI
     // tree lives inside this.
     QWidget* window = nullptr;
     QVBoxLayout* layout = nullptr;
+
+    // the root of the layout tree
+    alia::tree_node<layout_object> tree_root;
+    box_layout layout_root;
 
     void
     operator()(alia::context ctx);
@@ -99,5 +89,27 @@ initialize(
     qt_system& qt_system,
     alia::system& alia_system,
     std::function<void(qt_context)> controller);
+
+class MainWindow : public QWidget
+{
+    Q_OBJECT
+
+ public:
+    void
+    MainWindow::readSettings()
+    {
+        QSettings settings("alia", "qt-experiment");
+        restoreGeometry(settings.value("geometry").toByteArray());
+    }
+
+ private:
+    void
+    closeEvent(QCloseEvent* event)
+    {
+        QSettings settings("alia", "qt-experiment");
+        settings.setValue("geometry", saveGeometry());
+        QWidget::closeEvent(event);
+    }
+};
 
 #endif
