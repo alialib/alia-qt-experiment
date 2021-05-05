@@ -81,16 +81,13 @@ struct layout_container : layout_node
 
 struct widget_layout_node : layout_node
 {
-    void
-    initialize(QWidget* widget)
-    {
-        widget_ = widget;
-    }
+    virtual QWidget*
+    layout_widget() const = 0;
 
     int
     index() const override
     {
-        return this->parent()->layout()->indexOf(this->widget_);
+        return this->parent()->layout()->indexOf(this->layout_widget());
     }
 
     void
@@ -99,12 +96,9 @@ struct widget_layout_node : layout_node
         layout_node* after,
         layout_node* before) override
     {
-        new_parent.insert_widget(widget_, after, before);
+        new_parent.insert_widget(this->layout_widget(), after, before);
         parent_ = &new_parent;
     }
-
- private:
-    QWidget* widget_ = nullptr;
 };
 
 struct box_layout : layout_container

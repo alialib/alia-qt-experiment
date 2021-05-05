@@ -5,6 +5,7 @@
 #include <QPushButton>
 #include <QSettings>
 #include <QTextEdit>
+#include <QTimer>
 #include <QWidget>
 
 #include "adaptor.hpp"
@@ -13,18 +14,199 @@ using namespace alia;
 
 using std::string;
 
-struct qt_label
+template<class QtWidgetType>
+struct widget_object : widget_layout_node, noncopyable
 {
-    QLabel* object = nullptr;
-    captured_id text_id;
-    alia::tree_node<layout_object> tree_node;
-    widget_layout_node layout_node;
+    typedef QtWidgetType qt_widget_type;
 
-    ~qt_label()
+    widget_object(QtWidgetType* widget) : widget_(widget)
     {
-        if (object)
-            object->deleteLater();
+        widget_ = widget;
+        get_object(tree_node_).node = this;
     }
+    widget_object() : widget_object(new QtWidgetType)
+    {
+    }
+
+    ~widget_object()
+    {
+        if (widget_)
+            widget_->deleteLater();
+    }
+
+    void
+    refresh(dataless_qt_context ctx)
+    {
+        refresh_tree_node(alia::get<qt_traversal_tag>(ctx), tree_node_);
+    }
+
+    QtWidgetType*
+    get() const
+    {
+        return widget_;
+    }
+    QtWidgetType&
+    operator*()
+    {
+        return *widget_;
+    }
+    QtWidgetType*
+    operator->()
+    {
+        return widget_;
+    }
+
+    // (required by widget_layout_node)
+    QWidget*
+    layout_widget() const override
+    {
+        return widget_;
+    }
+
+ private:
+    QtWidgetType* widget_ = nullptr;
+    tree_node<layout_object> tree_node_;
+};
+
+// TODO: Support signal parameters.
+struct qt_signal_event : targeted_event
+{
+};
+
+template<class Derived, class WidgetObject>
+struct widget_handle_base
+{
+    widget_handle_base()
+    {
+    }
+
+    widget_handle_base(qt_context ctx, WidgetObject& object, bool initializing)
+        : object_(&object), initializing_(initializing)
+    {
+        ctx_.reset(ctx);
+    }
+
+    // // Specify a CONSTANT value for the 'class' attribute.
+    // Derived&
+    // classes(char const* value)
+    // {
+    //     return this->attr("class", value);
+    // }
+    // // Dynamically specify an individual token on the class attribute.
+    // template<class Token>
+    // Derived&
+    // class_(Token token)
+    // {
+    //     detail::do_element_class_token(
+    //         this->context(), this->node().object, this->initializing(),
+    //         token);
+    //     return static_cast<Derived&>(*this);
+    // }
+    // // Dynamically specify a conditional token on the class attribute.
+    // template<class Token, class Condition>
+    // Derived&
+    // class_(Token token, Condition condition)
+    // {
+    //     detail::do_element_class_token(
+    //         this->context(),
+    //         this->node().object,
+    //         this->initializing(),
+    //         mask(std::move(token), std::move(condition)));
+    //     return static_cast<Derived&>(*this);
+    // }
+
+    // // Specify the value of a property.
+    // template<class Value>
+    // Derived&
+    // prop(char const* name, Value value)
+    // {
+    //     detail::do_element_property(
+    //         this->context(), this->node().object, name, signalize(value));
+    //     return static_cast<Derived&>(*this);
+    // }
+
+    // Specify a handler for a Qt signal.
+    template<class QtSignal, class Function>
+    Derived&
+    handler(QtSignal signal, Function&& function)
+    {
+        // TODO: Support signal parameters.
+        auto id = get_component_id(this->context());
+        if (this->initializing())
+        {
+            auto& system = get<system_tag>(this->context());
+            QObject::connect(&this->widget(), signal, [&system, id]() {
+                qt_signal_event event;
+                dispatch_targeted_event(system, event, externalize(id));
+            });
+        }
+        targeted_event_handler<qt_signal_event>(
+            this->context(), id, [&](auto ctx, auto& e) {
+                std::forward<Function>(function)();
+            });
+        return static_cast<Derived&>(*this);
+    }
+
+    // Specify an action to perform in response to a Qt signal.
+    template<class QtSignal>
+    Derived&
+    on(QtSignal signal, action<> const& action)
+    {
+        return handler(signal, [&]() { perform_action(action); });
+    }
+
+    // Specify a callback to call on element initialization.
+    template<class Callback>
+    Derived&
+    init(Callback&& callback)
+    {
+        if (this->initializing())
+            std::forward<Callback>(callback)(static_cast<Derived&>(*this));
+        return static_cast<Derived&>(*this);
+    }
+
+    qt_context
+    context()
+    {
+        return *ctx_;
+    }
+    WidgetObject&
+    object()
+    {
+        return *object_;
+    }
+    typename WidgetObject::qt_widget_type&
+    widget()
+    {
+        return *object_->get();
+    }
+    bool
+    initializing()
+    {
+        return initializing_;
+    }
+
+ private:
+    optional_context<qt_context> ctx_;
+    WidgetObject* object_ = nullptr;
+    bool initializing_;
+};
+
+template<class WidgetObject>
+struct widget_handle
+    : widget_handle_base<widget_handle<WidgetObject>, WidgetObject>
+{
+    using widget_handle_base::widget_handle_base;
+};
+
+struct qt_label : widget_object<QLabel>
+{
+    qt_label()
+    {
+        (*this)->setWordWrap(true);
+    }
+
+    captured_id text_id;
 };
 
 void
@@ -33,24 +215,13 @@ do_label(qt_context ctx, readable<string> text)
     auto& label = get_cached_data<qt_label>(ctx);
 
     refresh_handler(ctx, [&](auto ctx) {
-        auto& system = get<system_tag>(ctx);
-
-        if (!label.object)
-        {
-            auto& traversal = get<qt_traversal_tag>(ctx);
-            label.object = new QLabel;
-            label.object->setWordWrap(true);
-            label.layout_node.initialize(label.object);
-            label.tree_node.object.node = &label.layout_node;
-        }
-
-        refresh_tree_node(get<qt_traversal_tag>(ctx), label.tree_node);
+        label.refresh(ctx);
 
         refresh_signal_view(
             label.text_id,
             text,
-            [&](auto text) { label.object->setText(text.c_str()); },
-            [&]() { label.object->setText(""); });
+            [&](auto text) { label->setText(text.c_str()); },
+            [&]() { label->setText(""); });
     });
 }
 
@@ -58,65 +229,41 @@ struct click_event : targeted_event
 {
 };
 
-struct qt_button
+struct qt_button : widget_object<QPushButton>
 {
-    QPushButton* object = nullptr;
     captured_id text_id;
     component_identity identity;
-    alia::tree_node<layout_object> tree_node;
-    widget_layout_node layout_node;
 
-    ~qt_button()
+    qt_button()
     {
-        if (object)
-            object->deleteLater();
     }
 };
+
+template<class Handle, class WidgetObject>
+Handle
+generic_widget(qt_context ctx)
+{
+    WidgetObject* object;
+    bool initializing = get_cached_data(ctx, &object);
+    refresh_handler(ctx, [&](auto ctx) { object->refresh(ctx); });
+    return Handle(ctx, *object, initializing);
+}
 
 void
 do_button(qt_context ctx, readable<string> text, action<> on_click)
 {
-    auto& button = get_cached_data<qt_button>(ctx);
+    auto handle = generic_widget<widget_handle<qt_button>, qt_button>(ctx);
+    auto& button = handle.object();
 
     refresh_handler(ctx, [&](auto ctx) {
-        auto& system = get<system_tag>(ctx);
-
-        refresh_component_identity(ctx, button.identity);
-
-        if (!button.object)
-        {
-            auto& traversal = get<qt_traversal_tag>(ctx);
-            button.object = new QPushButton;
-            button.layout_node.initialize(button.object);
-            button.tree_node.object.node = &button.layout_node;
-            QObject::connect(
-                button.object,
-                &QPushButton::clicked,
-                // The Qt object is technically owned within both of these, so
-                // I'm pretty sure it's safe to reference both.
-                [&system, &button]() {
-                    click_event event;
-                    dispatch_targeted_event(
-                        system, event, externalize(&button.identity));
-                });
-        }
-
-        refresh_tree_node(get<qt_traversal_tag>(ctx), button.tree_node);
-
         refresh_signal_view(
             button.text_id,
             text,
-            [&](auto text) { button.object->setText(text.c_str()); },
-            [&]() { button.object->setText(""); });
+            [&](auto text) { button->setText(text.c_str()); },
+            [&]() { button->setText(""); });
     });
 
-    targeted_event_handler<click_event>(
-        ctx, &button.identity, [&](auto ctx, auto& e) {
-            if (action_is_ready(on_click))
-            {
-                perform_action(on_click);
-            }
-        });
+    handle.on(&QPushButton::clicked, on_click);
 }
 
 struct value_update_event : targeted_event
@@ -124,72 +271,61 @@ struct value_update_event : targeted_event
     string value;
 };
 
-struct qt_text_control
+struct qt_text_control : widget_object<QTextEdit>
 {
-    QTextEdit* object = nullptr;
     captured_id text_id;
     component_identity identity;
-    alia::tree_node<layout_object> tree_node;
-    widget_layout_node layout_node;
 
-    ~qt_text_control()
+    qt_text_control()
     {
-        if (object)
-            object->deleteLater();
     }
 };
 
 void
 do_text_control(qt_context ctx, duplex<string> text)
 {
-    auto& widget = get_cached_data<qt_text_control>(ctx);
+    qt_text_control* widget_ptr;
+    bool initializing = get_cached_data(ctx, &widget_ptr);
+    auto& widget = *widget_ptr;
+
+    if (initializing)
+    {
+        auto& system = get<system_tag>(ctx);
+        QObject::connect(
+            widget.get(),
+            &QTextEdit::textChanged,
+            // The Qt object is technically owned within both of these, so
+            // I'm pretty sure it's safe to reference both.
+            [&system, &widget]() {
+                value_update_event event;
+                event.value = widget->toPlainText().toUtf8().constData();
+                dispatch_targeted_event(
+                    system, event, externalize(&widget.identity));
+            });
+    }
 
     refresh_handler(ctx, [&](auto ctx) {
-        auto& system = get<system_tag>(ctx);
-
-        refresh_component_identity(ctx, widget.identity);
-
-        if (!widget.object)
-        {
-            auto& traversal = get<qt_traversal_tag>(ctx);
-            widget.object = new QTextEdit;
-            widget.layout_node.initialize(widget.object);
-            widget.tree_node.object.node = &widget.layout_node;
-            QObject::connect(
-                widget.object,
-                &QTextEdit::textChanged,
-                // The Qt object is technically owned within both of these, so
-                // I'm pretty sure it's safe to reference both.
-                [&system, &widget]() {
-                    value_update_event event;
-                    event.value
-                        = widget.object->toPlainText().toUtf8().constData();
-                    dispatch_targeted_event(
-                        system, event, externalize(&widget.identity));
-                });
-        }
-
-        refresh_tree_node(get<qt_traversal_tag>(ctx), widget.tree_node);
+        widget.refresh(ctx);
 
         refresh_signal_view(
             widget.text_id,
             text,
             [&](auto text) {
                 // Prevent update cycles.
-                if (widget.object->toPlainText().toUtf8().constData() != text)
+                if (widget->toPlainText().toUtf8().constData() != text)
                 {
-                    widget.object->blockSignals(true);
-                    widget.object->setText(text.c_str());
-                    widget.object->blockSignals(false);
+                    widget->blockSignals(true);
+                    widget->setText(text.c_str());
+                    widget->blockSignals(false);
                 }
             },
             [&]() {
                 // Prevent update cycles.
-                if (widget.object->toPlainText().toUtf8().constData() != "")
+                if (widget->toPlainText().toUtf8().constData() != "")
                 {
-                    widget.object->blockSignals(true);
-                    widget.object->setText("");
-                    widget.object->blockSignals(false);
+                    widget->blockSignals(true);
+                    widget->setText("");
+                    widget->blockSignals(false);
                 }
             });
     });
@@ -247,6 +383,39 @@ qt_system::operator()(alia::context vanilla_ctx)
     this->controller(ctx);
 }
 
+struct qt_external_interface : default_external_interface
+{
+    qt_external_interface(alia::system& owner)
+        : default_external_interface(owner)
+    {
+    }
+
+    void
+    schedule_animation_refresh()
+    {
+        // TODO: Deal with the possibility that the this object (or its owner)
+        // is destroyed between now and when the timer fires.
+        // TODO: Synchronize this with the monitor refresh, and/or adjust the
+        // time so that it's relative to the start of the current refresh
+        // event.
+        QTimer::singleShot(10, [&] { refresh_system(this->owner); });
+    }
+
+    void
+    schedule_timer_event(
+        external_component_id component, millisecond_count time)
+    {
+        // TODO: Deal with the possibility that the this object (or its owner)
+        // is destroyed between now and when the timer fires.
+        QTimer::singleShot(
+            time - this->get_tick_count(), [&, time, component] {
+                timer_event event;
+                event.trigger_time = time;
+                dispatch_targeted_event(this->owner, event, component);
+            });
+    }
+};
+
 void
 initialize(
     qt_system& qt_system,
@@ -264,7 +433,8 @@ initialize(
     //     qt_system.window->restoreGeometry(
     //         settings.value("geometry").toByteArray());
     // }
-    // QObject::connect(qt_system.window, &QWidget::resizeEvent, [&qt_system] {
+    // QObject::connect(qt_system.window, &QWidget::resizeEvent,
+    // [&qt_system] {
     //     QSettings settings("alia", "Qt");
     //     settings.setValue("geometry", qt_system.window->saveGeometry());
     // });
@@ -278,7 +448,10 @@ initialize(
     qt_system.tree_root.object.node = &qt_system.layout_root;
 
     // Hook up the Qt system to the alia system.
-    initialize_system(alia_system, std::ref(qt_system));
+    initialize_system(
+        alia_system,
+        std::ref(qt_system),
+        new qt_external_interface(alia_system));
 
     // Do the initial refresh.
     refresh_system(alia_system);
