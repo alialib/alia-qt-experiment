@@ -3,6 +3,7 @@
 #include <QLabel>
 #include <QLayout>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSettings>
 #include <QTextEdit>
 #include <QTimer>
@@ -336,20 +337,112 @@ do_text_control(qt_context ctx, duplex<string> text)
         });
 }
 
-struct qt_column
+struct scroll_area_layout_node : layout_container
 {
-    QVBoxLayout* qt_object = nullptr;
-    alia::tree_node<layout_object> tree_node;
-    box_layout tree_object;
-
-    qt_column()
+    void
+    initialize(QScrollArea* scroll_area, QBoxLayout* layout)
     {
-        qt_object = new QVBoxLayout;
+        scroll_area_ = scroll_area;
+        layout_ = layout;
+    }
+
+    int
+    index() const override
+    {
+        return this->parent()->layout()->indexOf(this->scroll_area_);
+    }
+
+    void
+    relocate(
+        layout_container& new_parent,
+        layout_node* after,
+        layout_node* before) override
+    {
+        new_parent.insert_widget(this->scroll_area_, after, before);
+        parent_ = &new_parent;
+    }
+
+    virtual QLayout*
+    layout() const override
+    {
+        return layout_;
+    }
+
+    void
+    insert_widget(
+        QWidget* object, layout_node* after, layout_node* before) override
+    {
+        layout_->insertWidget(before ? before->index() : -1, object);
+    }
+
+    void
+    insert_layout(
+        QLayout* object, layout_node* after, layout_node* before) override
+    {
+        layout_->insertLayout(before ? before->index() : -1, object);
+    }
+
+ private:
+    QScrollArea* scroll_area_ = nullptr;
+    QBoxLayout* layout_ = nullptr;
+};
+
+struct scroll_area
+{
+    QScrollArea* qt_scroll_area = nullptr;
+    QWidget* qt_content = nullptr;
+    QVBoxLayout* qt_layout = nullptr;
+    alia::tree_node<layout_object> tree_node;
+    scroll_area_layout_node tree_object;
+
+    scroll_area()
+    {
+        qt_scroll_area = new QScrollArea;
+        qt_scroll_area->setFrameShape(QFrame::NoFrame);
+        qt_scroll_area->setWidgetResizable(true);
+        qt_content = new QWidget(qt_scroll_area);
+        qt_layout = new QVBoxLayout(qt_content);
+        qt_scroll_area->setWidget(qt_content);
+        tree_object.initialize(qt_scroll_area, qt_layout);
+        tree_node.object.node = &tree_object;
+    }
+
+    ~scroll_area()
+    {
+        if (qt_scroll_area)
+            qt_scroll_area->deleteLater();
+    }
+};
+
+void
+scoped_scroll_area::begin(qt_context ctx)
+{
+    scroll_area* data;
+    get_cached_data(ctx, &data);
+    if (is_refresh_event(ctx))
+        tree_scoping_.begin(get<qt_traversal_tag>(ctx), data->tree_node);
+}
+void
+scoped_scroll_area::end()
+{
+    tree_scoping_.end();
+}
+
+template<class QtLayoutType>
+struct qt_box_layout
+{
+    QtLayoutType* qt_object = nullptr;
+    alia::tree_node<layout_object> tree_node;
+    box_layout_node tree_object;
+
+    qt_box_layout()
+    {
+        qt_object = new QtLayoutType;
         tree_object.initialize(qt_object);
         tree_node.object.node = &tree_object;
     }
 
-    ~qt_column()
+    ~qt_box_layout()
     {
         if (qt_object)
             qt_object->deleteLater();
@@ -359,13 +452,27 @@ struct qt_column
 void
 scoped_column::begin(qt_context ctx)
 {
-    qt_column* column;
+    qt_box_layout<QVBoxLayout>* column;
     get_cached_data(ctx, &column);
     if (is_refresh_event(ctx))
         tree_scoping_.begin(get<qt_traversal_tag>(ctx), column->tree_node);
 }
 void
 scoped_column::end()
+{
+    tree_scoping_.end();
+}
+
+void
+scoped_row::begin(qt_context ctx)
+{
+    qt_box_layout<QHBoxLayout>* column;
+    get_cached_data(ctx, &column);
+    if (is_refresh_event(ctx))
+        tree_scoping_.begin(get<qt_traversal_tag>(ctx), column->tree_node);
+}
+void
+scoped_row::end()
 {
     tree_scoping_.end();
 }

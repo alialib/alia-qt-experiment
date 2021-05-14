@@ -28,6 +28,62 @@ do_button(
 
 struct layout_container;
 
+struct scoped_scroll_area
+{
+    scoped_scroll_area()
+    {
+    }
+    scoped_scroll_area(qt_context ctx)
+    {
+        begin(ctx);
+    }
+    ~scoped_scroll_area()
+    {
+        end();
+    }
+
+    void
+    begin(qt_context ctx);
+
+    void
+    end();
+
+ private:
+    alia::scoped_tree_node<layout_object> tree_scoping_;
+};
+
+struct scoped_row
+{
+    scoped_row()
+    {
+    }
+    scoped_row(qt_context ctx)
+    {
+        begin(ctx);
+    }
+    ~scoped_row()
+    {
+        end();
+    }
+
+    void
+    begin(qt_context ctx);
+
+    void
+    end();
+
+ private:
+    alia::scoped_tree_node<layout_object> tree_scoping_;
+};
+
+template<class Content>
+void
+row(qt_context ctx, Content&& content)
+{
+    scoped_row scoped(ctx);
+    std::forward<Content>(content)();
+}
+
 struct scoped_column
 {
     scoped_column()
@@ -76,7 +132,7 @@ struct qt_system
 
     // the root of the layout tree
     alia::tree_node<layout_object> tree_root;
-    box_layout layout_root;
+    box_layout_node layout_root;
 
     void
     operator()(alia::context ctx);

@@ -101,7 +101,7 @@ struct widget_layout_node : layout_node
     }
 };
 
-struct box_layout : layout_container
+struct box_layout_node : layout_container
 {
     void
     initialize(QBoxLayout* layout)
