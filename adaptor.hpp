@@ -17,13 +17,13 @@ typedef alia::remove_context_tag_t<qt_context, alia::data_traversal_tag>
     dataless_qt_context;
 
 void
-do_label(qt_context ctx, alia::readable<std::string> text);
+label(qt_context ctx, alia::readable<std::string> text);
 
 void
-do_text_control(qt_context ctx, alia::duplex<std::string> text);
+text_edit(qt_context ctx, alia::duplex<std::string> text);
 
 void
-do_button(
+button(
     qt_context ctx, alia::readable<std::string> text, alia::action<> on_click);
 
 struct layout_container;

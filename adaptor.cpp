@@ -2,6 +2,7 @@
 #include <QGridLayout>
 #include <QLabel>
 #include <QLayout>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSettings>
@@ -211,7 +212,7 @@ struct qt_label : widget_object<QLabel>
 };
 
 void
-do_label(qt_context ctx, readable<string> text)
+label(qt_context ctx, readable<string> text)
 {
     auto& label = get_cached_data<qt_label>(ctx);
 
@@ -225,10 +226,6 @@ do_label(qt_context ctx, readable<string> text)
             [&]() { label->setText(""); });
     });
 }
-
-struct click_event : targeted_event
-{
-};
 
 struct qt_button : widget_object<QPushButton>
 {
@@ -251,7 +248,7 @@ generic_widget(qt_context ctx)
 }
 
 void
-do_button(qt_context ctx, readable<string> text, action<> on_click)
+button(qt_context ctx, readable<string> text, action<> on_click)
 {
     auto handle = generic_widget<widget_handle<qt_button>, qt_button>(ctx);
     auto& button = handle.object();
@@ -272,69 +269,44 @@ struct value_update_event : targeted_event
     string value;
 };
 
-struct qt_text_control : widget_object<QTextEdit>
+struct qt_text_edit_object : widget_object<QTextEdit>
 {
     captured_id text_id;
-    component_identity identity;
 
-    qt_text_control()
+    qt_text_edit_object()
     {
     }
 };
 
 void
-do_text_control(qt_context ctx, duplex<string> text)
+text_edit(qt_context ctx, duplex<string> text)
 {
-    qt_text_control* widget_ptr;
-    bool initializing = get_cached_data(ctx, &widget_ptr);
-    auto& widget = *widget_ptr;
+    auto handle = generic_widget<
+        widget_handle<qt_text_edit_object>,
+        qt_text_edit_object>(ctx);
+    auto& widget = handle.widget();
 
-    if (initializing)
-    {
-        auto& system = get<system_tag>(ctx);
-        QObject::connect(
-            widget.get(),
-            &QTextEdit::textChanged,
-            // The Qt object is technically owned within both of these, so
-            // I'm pretty sure it's safe to reference both.
-            [&system, &widget]() {
-                value_update_event event;
-                event.value = widget->toPlainText().toUtf8().constData();
-                dispatch_targeted_event(
-                    system, event, externalize(&widget.identity));
-            });
-    }
+    handle.handler(&QTextEdit::textChanged, [&]() {
+        write_signal(text, widget.toPlainText().toUtf8().constData());
+    });
 
     refresh_handler(ctx, [&](auto ctx) {
-        widget.refresh(ctx);
-
         refresh_signal_view(
-            widget.text_id,
+            handle.object().text_id,
             text,
             [&](auto text) {
                 // Prevent update cycles.
-                if (widget->toPlainText().toUtf8().constData() != text)
-                {
-                    widget->blockSignals(true);
-                    widget->setText(text.c_str());
-                    widget->blockSignals(false);
-                }
+                widget.blockSignals(true);
+                widget.setText(text.c_str());
+                widget.blockSignals(false);
             },
             [&]() {
                 // Prevent update cycles.
-                if (widget->toPlainText().toUtf8().constData() != "")
-                {
-                    widget->blockSignals(true);
-                    widget->setText("");
-                    widget->blockSignals(false);
-                }
+                widget.blockSignals(true);
+                widget.setText("");
+                widget.blockSignals(false);
             });
     });
-
-    targeted_event_handler<value_update_event>(
-        ctx, &widget.identity, [&](auto ctx, auto& e) {
-            write_signal(text, e.value);
-        });
 }
 
 struct scroll_area_layout_node : layout_container
@@ -549,7 +521,6 @@ initialize(
     window->setProperty("bgType", "toplevel");
 
     qt_system.layout = new QVBoxLayout(qt_system.window);
-    qt_system.window->setLayout(qt_system.layout);
     qt_system.controller = std::move(controller);
     qt_system.layout_root.initialize(qt_system.layout);
     qt_system.tree_root.object.node = &qt_system.layout_root;
