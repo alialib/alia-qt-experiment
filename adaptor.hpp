@@ -35,6 +35,12 @@ checkbox(
     alia::duplex<bool> checked,
     alia::readable<std::string> label);
 
+void
+radio_button(
+    qt_context ctx,
+    alia::duplex<bool> selected,
+    alia::readable<std::string> label);
+
 struct layout_container;
 
 struct scoped_scroll_area

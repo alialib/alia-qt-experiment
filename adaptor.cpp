@@ -5,6 +5,7 @@
 #include <QLayout>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QScrollArea>
 #include <QSettings>
 #include <QTextEdit>
@@ -300,6 +301,52 @@ checkbox(qt_context ctx, duplex<bool> checked, readable<string> label)
 
     handle.handler(&QCheckBox::clicked, [&] {
         write_signal(checked, checkbox->isChecked());
+    });
+}
+
+struct qt_radio_button : widget_object<QRadioButton>
+{
+    captured_id label_id;
+    captured_id checked_id;
+    bool disabled = false;
+
+    qt_radio_button()
+    {
+        (*this)->setAutoExclusive(false);
+    }
+};
+
+void
+radio_button(qt_context ctx, duplex<bool> selected, readable<string> label)
+{
+    auto handle
+        = generic_widget<widget_handle<qt_radio_button>, qt_radio_button>(ctx);
+    auto& button = handle.object();
+
+    refresh_handler(ctx, [&](auto ctx) {
+        // Refresh checked state.
+        refresh_signal_view(
+            button.checked_id,
+            selected,
+            [&](auto selected) { button->setChecked(selected); },
+            [&]() { button->setChecked(false); });
+        // Refresh disabled state.
+        bool disabled = !signal_ready_to_write(selected);
+        if (disabled != button.disabled)
+        {
+            button->setDisabled(disabled);
+            button.disabled = disabled;
+        }
+        // Refresh label.
+        refresh_signal_view(
+            button.label_id,
+            label,
+            [&](auto text) { button->setText(text.c_str()); },
+            [&]() { button->setText(""); });
+    });
+
+    handle.handler(&QRadioButton::clicked, [&] {
+        write_signal(selected, button->isChecked());
     });
 }
 
