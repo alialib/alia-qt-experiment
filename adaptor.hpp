@@ -29,6 +29,12 @@ void
 button(
     qt_context ctx, alia::readable<std::string> text, alia::action<> on_click);
 
+void
+checkbox(
+    qt_context ctx,
+    alia::duplex<bool> checked,
+    alia::readable<std::string> label);
+
 struct layout_container;
 
 struct scoped_scroll_area

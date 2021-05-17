@@ -1,3 +1,4 @@
+#include <QCheckBox>
 #include <QFrame>
 #include <QGridLayout>
 #include <QLabel>
@@ -227,16 +228,6 @@ label(qt_context ctx, readable<string> text)
     });
 }
 
-struct qt_button : widget_object<QPushButton>
-{
-    captured_id text_id;
-    component_identity identity;
-
-    qt_button()
-    {
-    }
-};
-
 template<class Handle, class WidgetObject>
 Handle
 generic_widget(qt_context ctx)
@@ -246,6 +237,12 @@ generic_widget(qt_context ctx)
     refresh_handler(ctx, [&](auto ctx) { object->refresh(ctx); });
     return Handle(ctx, *object, initializing);
 }
+
+struct qt_button : widget_object<QPushButton>
+{
+    captured_id text_id;
+    component_identity identity;
+};
 
 void
 button(qt_context ctx, readable<string> text, action<> on_click)
@@ -264,10 +261,47 @@ button(qt_context ctx, readable<string> text, action<> on_click)
     handle.on(&QPushButton::clicked, on_click);
 }
 
-struct value_update_event : targeted_event
+struct qt_checkbox : widget_object<QCheckBox>
 {
-    string value;
+    captured_id label_id;
+    captured_id checked_id;
+    bool disabled = false;
 };
+
+void
+checkbox(qt_context ctx, duplex<bool> checked, readable<string> label)
+{
+    auto handle = generic_widget<widget_handle<qt_checkbox>, qt_checkbox>(ctx);
+    auto& checkbox = handle.object();
+
+    refresh_handler(ctx, [&](auto ctx) {
+        // Refresh checked state.
+        refresh_signal_view(
+            checkbox.checked_id,
+            checked,
+            [&](auto checked) { checkbox->setChecked(checked); },
+            [&]() {
+                checkbox->setCheckState(Qt::CheckState::PartiallyChecked);
+            });
+        // Refresh disabled state.
+        bool disabled = !signal_ready_to_write(checked);
+        if (disabled != checkbox.disabled)
+        {
+            checkbox->setDisabled(disabled);
+            checkbox.disabled = disabled;
+        }
+        // Refresh label.
+        refresh_signal_view(
+            checkbox.label_id,
+            label,
+            [&](auto text) { checkbox->setText(text.c_str()); },
+            [&]() { checkbox->setText(""); });
+    });
+
+    handle.handler(&QCheckBox::clicked, [&] {
+        write_signal(checked, checkbox->isChecked());
+    });
+}
 
 struct qt_text_edit_object : widget_object<QTextEdit>
 {
