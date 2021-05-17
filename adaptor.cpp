@@ -309,6 +309,36 @@ text_edit(qt_context ctx, duplex<string> text)
     });
 }
 
+struct qt_line_edit_object : widget_object<QLineEdit>
+{
+    captured_id text_id;
+
+    qt_line_edit_object()
+    {
+    }
+};
+
+void
+line_edit(qt_context ctx, duplex<string> text)
+{
+    auto handle = generic_widget<
+        widget_handle<qt_line_edit_object>,
+        qt_line_edit_object>(ctx);
+    auto& widget = handle.widget();
+
+    handle.handler(&QLineEdit::textEdited, [&]() {
+        write_signal(text, widget.text().toUtf8().constData());
+    });
+
+    refresh_handler(ctx, [&](auto ctx) {
+        refresh_signal_view(
+            handle.object().text_id,
+            text,
+            [&](auto text) { widget.setText(text.c_str()); },
+            [&]() { widget.setText(""); });
+    });
+}
+
 struct scroll_area_layout_node : layout_container
 {
     void

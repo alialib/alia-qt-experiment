@@ -20,6 +20,9 @@ void
 label(qt_context ctx, alia::readable<std::string> text);
 
 void
+line_edit(qt_context ctx, alia::duplex<std::string> text);
+
+void
 text_edit(qt_context ctx, alia::duplex<std::string> text);
 
 void
